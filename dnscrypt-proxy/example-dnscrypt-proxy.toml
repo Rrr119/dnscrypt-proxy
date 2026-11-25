@@ -175,7 +175,7 @@ keepalive = 30
 #                        Load Balancing & Performance                          #
 ###############################################################################
 
-## Load-balancing strategy: 'wp2' (default), 'p2', 'ph', 'p<n>', 'first', or 'random'
+## Load-balancing strategy: 'wp2' (default), 'p2', 'ph', 'p<n>', 'first', 'random', or 'round_robin'
 ## 'wp2' (default): Weighted Power of Two - selects the better performing server
 ## from two random candidates based on real-time RTT and success rates.
 ## 'p2': Randomly choose 1 of the fastest 2 servers by latency.
@@ -183,6 +183,8 @@ keepalive = 30
 ## 'p<n>': Randomly choose from fastest n servers (e.g., 'p3' for fastest 3).
 ## 'first': Always use the fastest server.
 ## 'random': Randomly choose from all servers.
+## 'round_robin': Take turns across all configured servers, giving an exact
+## equal share when the number of queries is a multiple of the server count.
 ## The response quality still depends on the server itself.
 
 # lb_strategy = 'wp2'

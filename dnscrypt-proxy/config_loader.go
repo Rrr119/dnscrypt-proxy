@@ -218,6 +218,8 @@ func configureLoadBalancing(proxy *Proxy, config *Config) {
 		lbStrategy = LBStrategyFirst{}
 	case "random":
 		lbStrategy = LBStrategyRandom{}
+	case "round_robin", "round-robin", "roundrobin", "rr":
+		lbStrategy = LBStrategyRoundRobin{}
 	case "wp2":
 		lbStrategy = LBStrategyWP2{}
 	default:

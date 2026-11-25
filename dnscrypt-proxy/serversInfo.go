@@ -145,6 +145,18 @@ func (LBStrategyWP2) getActiveCount(serversCount int) int {
 	return serversCount // All servers are considered active for WP2
 }
 
+type LBStrategyRoundRobin struct{}
+
+// getCandidate is only here to satisfy LBStrategy. getOne keeps the rotating
+// cursor in ServersInfo so every caller observes one sequence.
+func (LBStrategyRoundRobin) getCandidate(serversCount int) int {
+	return 0
+}
+
+func (LBStrategyRoundRobin) getActiveCount(serversCount int) int {
+	return serversCount
+}
+
 var DefaultLBStrategy = LBStrategyWP2{}
 
 type DNSCryptRelay struct {
@@ -170,6 +182,7 @@ type ServersInfo struct {
 	registeredRelays    []RegisteredServer
 	lbStrategy          LBStrategy
 	lbEstimator         bool
+	roundRobinCursor    uint64
 	odohRefreshMu       sync.Mutex
 	odohRefreshInFlight map[string]bool
 	odohLastFailureAt   map[string]time.Time
@@ -373,7 +386,8 @@ func (serversInfo *ServersInfo) estimatorUpdate(currentActive int) {
 		return
 	}
 	candidate := rand.Intn(serversCount-activeCount) + activeCount
-	candidateRtt, currentActiveRtt := serversInfo.inner[candidate].rtt.Value(), serversInfo.inner[currentActive].rtt.Value()
+	candidateRtt := serverRTTValue(serversInfo.inner[candidate])
+	currentActiveRtt := serverRTTValue(serversInfo.inner[currentActive])
 	if currentActiveRtt < 0 {
 		currentActiveRtt = candidateRtt
 		serversInfo.inner[currentActive].rtt.Set(currentActiveRtt)
@@ -393,19 +407,26 @@ func (serversInfo *ServersInfo) estimatorUpdate(currentActive int) {
 
 func (serversInfo *ServersInfo) sortByRtt() {
 	for i := 1; i < len(serversInfo.inner); i++ {
-		if serversInfo.inner[i-1].rtt.Value() > serversInfo.inner[i].rtt.Value() {
+		if serverRTTValue(serversInfo.inner[i-1]) > serverRTTValue(serversInfo.inner[i]) {
 			serversInfo.inner[i-1], serversInfo.inner[i] = serversInfo.inner[i], serversInfo.inner[i-1]
 		}
 	}
+}
+
+func serverRTTValue(server *ServerInfo) float64 {
+	if server.rtt == nil {
+		return 0
+	}
+	return server.rtt.Value()
 }
 
 func (serversInfo *ServersInfo) recoverDormantServers() {
 	if len(serversInfo.inner) <= 1 {
 		return
 	}
-	bestRtt := serversInfo.inner[0].rtt.Value()
+	bestRtt := serverRTTValue(serversInfo.inner[0])
 	for _, server := range serversInfo.inner {
-		if rtt := server.rtt.Value(); rtt > 0 && rtt < bestRtt {
+		if rtt := serverRTTValue(server); rtt > 0 && rtt < bestRtt {
 			bestRtt = rtt
 		}
 	}
@@ -415,7 +436,7 @@ func (serversInfo *ServersInfo) recoverDormantServers() {
 	now := time.Now()
 	needsSort := false
 	for _, server := range serversInfo.inner {
-		currentRtt := server.rtt.Value()
+		currentRtt := serverRTTValue(server)
 		if currentRtt <= bestRtt*4.0 {
 			continue
 		}
@@ -460,11 +481,19 @@ func (serversInfo *ServersInfo) getOne() *ServerInfo {
 
 	var candidate int
 
+	lbStrategy := serversInfo.lbStrategy
+	if lbStrategy == nil {
+		lbStrategy = DefaultLBStrategy
+	}
+
 	// Check if using WP2 strategy
-	if _, isWP2 := serversInfo.lbStrategy.(LBStrategyWP2); isWP2 {
+	if _, isWP2 := lbStrategy.(LBStrategyWP2); isWP2 {
 		candidate = serversInfo.getWeightedCandidate(serversCount)
+	} else if _, isRoundRobin := lbStrategy.(LBStrategyRoundRobin); isRoundRobin {
+		candidate = int(serversInfo.roundRobinCursor % uint64(serversCount))
+		serversInfo.roundRobinCursor++
 	} else {
-		candidate = serversInfo.lbStrategy.getCandidate(serversCount)
+		candidate = lbStrategy.getCandidate(serversCount)
 		if serversInfo.lbEstimator {
 			serversInfo.estimatorUpdate(candidate)
 		}
@@ -473,7 +502,7 @@ func (serversInfo *ServersInfo) getOne() *ServerInfo {
 	serverInfo := serversInfo.inner[candidate]
 	dlog.Debugf("Using candidate [%s] RTT: %d Score: %.3f",
 		serverInfo.Name,
-		int(serverInfo.rtt.Value()),
+		int(serverRTTValue(serverInfo)),
 		serversInfo.calculateServerScore(serverInfo))
 	serversInfo.Unlock()
 
@@ -519,7 +548,7 @@ func (serversInfo *ServersInfo) getWeightedCandidate(serversCount int) int {
 // calculateServerScore computes a performance score for server selection
 func (serversInfo *ServersInfo) calculateServerScore(server *ServerInfo) float64 {
 	// Base score from RTT (lower RTT = higher score)
-	rtt := server.rtt.Value()
+	rtt := serverRTTValue(server)
 	if rtt <= 0 {
 		rtt = 1000 // Default high RTT for servers without data
 	}
@@ -583,7 +612,7 @@ func (serversInfo *ServersInfo) logWP2Stats() {
 		}
 
 		dlog.Debugf("[%d] %s: RTT=%dms, Score=%.3f, Success=%.2f%%, Queries=%d",
-			i, server.Name, int(server.rtt.Value()), score, successRate*100, server.totalQueries)
+			i, server.Name, int(serverRTTValue(server)), score, successRate*100, server.totalQueries)
 	}
 }
 

@@ -636,6 +636,20 @@ func (proxy *Proxy) startAcceptingClients() {
 
 const anonymizedDNSHeaderSize = 8 + 2 + net.IPv6len + 2
 
+func dnsCryptUDPExchangeAddr(serverInfo *ServerInfo) *net.UDPAddr {
+	if serverInfo.Relay != nil && serverInfo.Relay.Dnscrypt != nil {
+		return serverInfo.Relay.Dnscrypt.RelayUDPAddr
+	}
+	return serverInfo.UDPAddr
+}
+
+func dnsCryptTCPExchangeAddr(serverInfo *ServerInfo) *net.TCPAddr {
+	if serverInfo.Relay != nil && serverInfo.Relay.Dnscrypt != nil {
+		return serverInfo.Relay.Dnscrypt.RelayTCPAddr
+	}
+	return serverInfo.TCPAddr
+}
+
 func (proxy *Proxy) prepareForRelay(ip net.IP, port int, encryptedQuery *[]byte) {
 	anonymizedDNSHeader := []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00}
 	relayedQuery := append(anonymizedDNSHeader, ip.To16()...)
@@ -653,10 +667,7 @@ func (proxy *Proxy) exchangeWithUDPServer(
 	clientNonce []byte,
 	queryEpoch uint64,
 ) ([]byte, error) {
-	upstreamAddr := serverInfo.UDPAddr
-	if serverInfo.Relay != nil && serverInfo.Relay.Dnscrypt != nil {
-		upstreamAddr = serverInfo.Relay.Dnscrypt.RelayUDPAddr
-	}
+	upstreamAddr := dnsCryptUDPExchangeAddr(serverInfo)
 
 	proxyDialer := proxy.xTransport.proxyDialer
 	if proxyDialer != nil {
@@ -754,10 +765,7 @@ func (proxy *Proxy) exchangeWithTCPServer(
 	clientNonce []byte,
 	queryEpoch uint64,
 ) ([]byte, error) {
-	upstreamAddr := serverInfo.TCPAddr
-	if serverInfo.Relay != nil && serverInfo.Relay.Dnscrypt != nil {
-		upstreamAddr = serverInfo.Relay.Dnscrypt.RelayTCPAddr
-	}
+	upstreamAddr := dnsCryptTCPExchangeAddr(serverInfo)
 	var err error
 	var pc net.Conn
 	proxyDialer := proxy.xTransport.proxyDialer

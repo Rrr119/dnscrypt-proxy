@@ -1,0 +1,17 @@
+{
+  "root": "/home/dev/feedback/uid36825",
+  "B": "/home/dev/feedback/uid36825",
+  "sha": "207e98c945082ae9348991491c2cb45af2f97cbb",
+  "wslDistro": "Ubuntu-26.04",
+  "source": {
+    "owner": "DNSCrypt",
+    "repo": "dnscrypt-proxy",
+    "sha": "207e98c945082ae9348991491c2cb45af2f97cbb"
+  },
+  "fork": {
+    "owner": "Rrr119",
+    "repo": "dnscrypt-proxy",
+    "cloneUrl": "https://github.com/Rrr119/dnscrypt-proxy.git"
+  },
+  "at": "2026-11-25T03:19:11.416Z"
+}
